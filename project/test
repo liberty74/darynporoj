@@ -1,0 +1,1017 @@
+import os
+import torch
+import clip
+import hashlib
+import webbrowser
+import json
+import random
+from PIL import Image as PILImage
+
+from kivy.graphics import Color, Rectangle
+from kivy.app import App
+from kivy.uix.screenmanager import ScreenManager, Screen, FadeTransition
+from kivy.uix.label import Label
+from kivy.uix.button import Button
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.image import Image
+from kivy.uix.textinput import TextInput
+from kivy.uix.relativelayout import RelativeLayout
+from kivy_garden.mapview import MapView, MapMarker
+from kivy.uix.filechooser import FileChooserIconView
+from kivy.uix.scrollview import ScrollView
+from kivy.utils import platform
+from transformers import pipeline
+
+# === Загружаем CLIP-модель для анализа изображений ===
+device = "cuda" if torch.cuda.is_available() else "cpu"
+model, preprocess = clip.load("ViT-B/32", device=device)
+
+
+# === Работа с пользователями (регистрация и вход) ===
+def init_file():
+    if not os.path.exists('users.txt'):
+        with open('users.txt', 'w'):
+            pass
+
+
+def add_user(login: str, password: str) -> bool:
+    with open('users.txt', 'r') as f:
+        users = f.read().splitlines()
+
+    for user in users:
+        args = user.split(':')
+        if login == args[0]:
+            return False
+
+    with open('users.txt', 'a') as f:
+        f.write(f'{login}:{password}\n')
+    return True
+
+
+def get_user(login: str, password: str) -> bool:
+    with open('users.txt', 'r') as f:
+        users = f.read().splitlines()
+
+    for user in users:
+        args = user.split(':')
+        if login == args[0] and password == args[1]:
+            return True
+    return False
+
+# Загружаем модель (легкая версия GPT-2)
+generator = pipeline("text-generation", model="distilgpt2")
+
+def ai_bot_reply(user_text):
+    """Генерация ответа на вопрос пользователя"""
+    response = generator(
+        f"Вопрос: {user_text}\nОтвет про экологию:",
+        max_length=80,
+        num_return_sequences=1,
+        do_sample=True,
+        temperature=0.7,
+        truncation=True
+    )
+    return response[0]["generated_text"].split("Ответ про экологию:")[-1].strip()
+init_file()
+
+# === Файлы для хранения данных и функции ===
+DATA_FILE = "user_data.json"
+CHAT_FILE = "chat_messages.json"
+
+def load_user_data():
+    if os.path.exists(DATA_FILE):
+        with open(DATA_FILE, "r") as f:
+            return json.load(f)
+    return {}
+
+def save_user_data(data):
+    with open(DATA_FILE, "w") as f:
+        json.dump(data, f)
+
+def load_chat_messages():
+    if os.path.exists(CHAT_FILE):
+        with open(CHAT_FILE, "r") as f:
+            return json.load(f)
+    return []
+
+def save_chat_messages(messages):
+    with open(CHAT_FILE, "w") as f:
+        json.dump(messages, f)
+        
+# === Хранилище данных текущего пользователя ===
+class UserData:
+    login = None
+    avatar = "default_avatar.png"
+    points = 0
+
+
+# === Базовый экран ===
+# === Базовый экран ===
+class BaseScreen(Screen):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.layout = RelativeLayout()
+
+        # фон
+        self.bg = Image(source="background.jpg", allow_stretch=True, keep_ratio=False)
+        self.layout.add_widget(self.bg)
+
+        # контейнер для контента
+        self.content = BoxLayout(
+            orientation='vertical',
+            padding=20,
+            spacing=15,
+            size_hint=(0.9, 0.9),
+            pos_hint={'center_x': 0.5, 'center_y': 0.5}
+        )
+        self.layout.add_widget(self.content)
+
+        # 🔹 кнопка выхода
+        self.logout_btn = Button(
+            text="Выйти",
+            size_hint=(None, None),
+            size=(80, 40),
+            pos_hint={"x": 0.01, "top": 0.98},
+            background_color=(0.6, 0.2, 0.2, 1),
+            color=(1, 1, 1, 1),
+            font_size=14
+        )
+        self.logout_btn.bind(on_press=self.logout)
+        self.layout.add_widget(self.logout_btn)
+
+        # профиль
+        self.profile_box = BoxLayout(
+            orientation='vertical',
+            size_hint=(None, None),
+            height=200,
+            width=200,
+            spacing=5,
+            padding=5,
+            pos_hint={'right': 0.98, 'top': 0.98}
+        )
+
+        self.avatar_img = Image(source=UserData.avatar, size_hint=(None, None), size=(80, 80))
+        self.name_label = Label(text=f"{UserData.login if UserData.login else 'Гость'}", color=(1, 1, 1, 1))
+        self.points_label = Label(text=f"Баллы: {UserData.points}", color=(1, 1, 1, 1))
+        self.change_avatar_btn = Button(text="Сменить", size_hint=(1, None), height=35)
+        self.change_avatar_btn.bind(on_press=self.change_avatar)
+
+        self.profile_box.add_widget(self.avatar_img)
+        self.profile_box.add_widget(self.name_label)
+        self.profile_box.add_widget(self.points_label)
+        self.profile_box.add_widget(self.change_avatar_btn)
+
+        self.add_widget(self.layout)
+        self.show_profile()
+
+    # -------------------- Профиль --------------------
+    def show_profile(self):
+        if self.profile_box.parent is None:
+            self.layout.add_widget(self.profile_box)
+        self.update_profile()
+
+    def hide_profile(self):
+        if self.profile_box.parent:
+            self.layout.remove_widget(self.profile_box)
+
+    def update_profile(self):
+        self.avatar_img.source = UserData.avatar
+        self.avatar_img.reload()
+        self.name_label.text = UserData.login if UserData.login else "Гость"
+        self.points_label.text = f"Баллы: {UserData.points}"
+
+    # -------------------- Выход --------------------
+    def logout(self, instance):
+        UserData.login = None
+        UserData.avatar = "default_avatar.png"
+        UserData.points = 0
+        self.manager.current = "auth"
+        self.manager.get_screen("auth").update_profile()
+
+    # -------------------- Смена аватара --------------------
+    def change_avatar(self, instance):
+        self.hide_profile()
+
+        # затемнение фона
+        self.overlay = RelativeLayout(size_hint=(1,1))
+        with self.overlay.canvas:
+            Color(0, 0, 0, 0.6)  # черный с прозрачностью 0.6
+            self.dim_rect = Rectangle(size=self.size, pos=self.pos)
+
+        # контейнер для выбора аватара
+        self.avatar_layer = BoxLayout(orientation='vertical', spacing=10, size_hint=(0.8, 0.8), pos_hint={'center_x':0.5, 'center_y':0.5})
+        self.avatar_layer.add_widget(Label(text="Выберите новый аватар", font_size=20, bold=True))
+
+        desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+        downloads = os.path.join(os.path.expanduser("~"), "Downloads")
+
+        self.filechooser = FileChooserIconView(path=".", filters=["*.png", "*.jpg", "*.jpeg"], size_hint=(1, 0.8))
+        if os.path.exists(desktop):
+            self.filechooser.path = desktop
+        elif os.path.exists(downloads):
+            self.filechooser.path = downloads
+
+        self.filechooser.bind(on_submit=self.selected_avatar)
+        self.avatar_layer.add_widget(self.filechooser)
+
+        controls = BoxLayout(size_hint=(1, None), height=50, spacing=10)
+        open_btn = Button(text="Открыть", background_color=(0.2, 0.6, 0.8, 1))
+        open_btn.bind(on_press=lambda x: self.selected_avatar(None, self.filechooser.selection, None))
+        cancel_btn = Button(text="Отмена", background_color=(0.6, 0.2, 0.2, 1))
+        cancel_btn.bind(on_press=lambda x: self.remove_avatar_layer())
+        controls.add_widget(open_btn)
+        controls.add_widget(cancel_btn)
+        self.avatar_layer.add_widget(controls)
+
+        self.overlay.add_widget(self.avatar_layer)
+        self.layout.add_widget(self.overlay)
+
+    def remove_avatar_layer(self):
+        if hasattr(self, 'overlay'):
+            self.layout.remove_widget(self.overlay)
+            del self.overlay
+        self.show_profile()  # возвращаем основной контент
+
+    def selected_avatar(self, filechooser, selection, touch):
+        if selection:
+            file_path = selection[0]
+            os.makedirs("avatars", exist_ok=True)
+            new_path = os.path.join("avatars", f"{UserData.login}_avatar.png")
+            PILImage.open(file_path).save(new_path)
+            UserData.avatar = new_path
+
+            # обновляем профиль на всех экранах
+            self.update_profile()
+            for screen in self.manager.screens:
+                if isinstance(screen, BaseScreen):
+                    screen.update_profile()
+
+            # Показываем сообщение и кнопку "Назад"
+            self.avatar_layer.clear_widgets()
+            self.avatar_layer.add_widget(Label(text="Аватар успешно изменён!", font_size=20, bold=True))
+            back_btn = Button(
+                text="Назад",
+                size_hint=(1, None),
+                height=50,
+                background_color=(0.2, 0.6, 0.2, 1)
+            )
+            back_btn.bind(on_press=lambda x: self.remove_avatar_layer())
+            self.avatar_layer.add_widget(back_btn)
+
+
+
+# === Экран авторизации ===
+# === Экран авторизации ===
+class AuthScreen(BaseScreen):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.hide_profile()
+        self.logout_btn.opacity = 0
+        self.logout_btn.disabled = True
+
+        self.content.add_widget(Label(
+            text="Вход / Регистрация",
+            font_size=26,
+            bold=True,
+            color=(1, 1, 1, 1)
+        ))
+
+        self.login_input = TextInput(hint_text="Логин", multiline=False, size_hint=(1, None), height=40)
+        self.password_input = TextInput(hint_text="Пароль", multiline=False, password=True, size_hint=(1, None), height=40)
+        self.content.add_widget(self.login_input)
+        self.content.add_widget(self.password_input)
+
+        btns = BoxLayout(size_hint=(1, None), height=50, spacing=10)
+        login_btn = Button(text="Войти", background_color=(0.2, 0.6, 0.2, 1))
+        reg_btn = Button(text="Регистрация", background_color=(0.2, 0.6, 0.8, 1))
+        login_btn.bind(on_press=self.login)
+        reg_btn.bind(on_press=self.register)
+        btns.add_widget(login_btn)
+        btns.add_widget(reg_btn)
+        self.content.add_widget(btns)
+
+        self.message = Label(text="", color=(1, 1, 1, 1), font_size=16)
+        self.content.add_widget(self.message)
+
+    def update_profile(self):
+        pass  # в окне авторизации профиль не нужен
+
+    def login(self, instance):
+        login_text = self.login_input.text.strip()
+        password_text = hashlib.sha256(self.password_input.text.strip().encode()).hexdigest()
+        if get_user(login_text, password_text):
+            UserData.login = login_text
+            avatar_path = os.path.join("avatars", f"{login_text}_avatar.png")
+            UserData.avatar = avatar_path if os.path.exists(avatar_path) else "default_avatar.png"
+
+            # 🔹 загружаем баллы пользователя из файла
+            data = load_user_data()
+            UserData.points = data.get(UserData.login, {}).get("points", 0)
+
+            self.manager.current = "main"
+            self.manager.get_screen("main").show_profile()
+        else:
+            self.message.text = "Неверный логин или пароль!"
+
+    def register(self, instance):
+        login_text = self.login_input.text.strip()
+        password_text = self.password_input.text.strip()
+
+        if not login_text or not password_text:
+            self.message.text = "Введите логин и пароль!"
+            return
+
+        password_hashed = hashlib.sha256(password_text.encode()).hexdigest()
+        if add_user(login_text, password_hashed):
+            self.message.text = "Регистрация прошла успешно! Теперь войдите."
+        else:
+            self.message.text = "Пользователь уже существует!"
+
+
+# === Главный экран ===
+class MainScreen(BaseScreen):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.show_profile()
+
+        # Основной ScrollView
+        self.scroll = ScrollView(size_hint=(1, 1))
+        self.main_layout = BoxLayout(orientation='vertical', spacing=10, size_hint_y=None)
+        self.main_layout.bind(minimum_height=self.main_layout.setter('height'))
+        self.scroll.add_widget(self.main_layout)
+        self.content.add_widget(self.scroll)
+
+        # 🔹 Заголовок
+        self.title_label = Label(
+            text="Миска добра - добро начинается с вас!\nПомогите накормить животных в приюте",
+            font_size=30,
+            bold=True,
+            color=(1,1,1,1),
+            size_hint_y=None,
+            height=120
+        )
+        self.main_layout.add_widget(self.title_label)
+
+        # 🔹 Лидерборд
+        self.leaderboard_box = BoxLayout(orientation='vertical', size_hint_y=None, spacing=5)
+        self.main_layout.add_widget(self.leaderboard_box)
+        self.update_leaderboard()
+
+        # 🔹 Кнопки
+        self.buttons_layout = BoxLayout(orientation='vertical', spacing=10, size_hint_y=None)
+        self.buttons_layout.bind(minimum_height=self.buttons_layout.setter('height'))
+        self.main_layout.add_widget(self.buttons_layout)
+
+        buttons = [
+            ("Карта контейнеров", self.go_to_map),
+            ("Проверка еды", self.go_to_food),
+            ("Мессенджер", self.go_to_chat),
+            ("Волонтерство", self.go_to_volunteer),
+            ("Магазин", self.go_to_store),
+            ("О проекте", self.go_to_about),
+            ("ИИ-ассистент", self.go_to_ai)
+        ]
+
+        for text, action in buttons:
+            btn = Button(
+                text=text,
+                background_color=(0.2, 0.6, 0.2, 1),
+                color=(1,1,1,1),
+                font_size=18,
+                size_hint=(1,None),
+                height=50
+            )
+            btn.bind(on_press=action)
+            self.buttons_layout.add_widget(btn)
+
+    def reset_ui(self):
+        """Перерисовка интерфейса после смены аватара или действий"""
+        self.main_layout.clear_widgets()
+        self.main_layout.add_widget(self.title_label)
+        self.main_layout.add_widget(self.leaderboard_box)
+        self.update_leaderboard()
+        self.main_layout.add_widget(self.buttons_layout)
+
+    def update_leaderboard(self):
+        """Обновление топ-3 пользователей по total_points"""
+        data = load_user_data()
+        sorted_users = sorted(data.items(), key=lambda x: x[1].get("total_points", 0), reverse=True)
+
+        self.leaderboard_box.clear_widgets()
+        self.leaderboard_box.add_widget(Label(
+            text="🏆 Лидерборд",
+            font_size=22,
+            bold=True,
+            color=(1,1,1,1),
+            size_hint_y=None,
+            height=40
+        ))
+
+        for i, (username, stats) in enumerate(sorted_users[:3], start=1):
+            points = stats.get("total_points", 0)
+            label = Label(
+                text=f"{i}. {username} — {points} очков",
+                font_size=18,
+                color=(1,1,1,1),
+                size_hint_y=None,
+                height=30
+            )
+            self.leaderboard_box.add_widget(label)
+
+    # 🔹 Переходы на другие экраны
+    def go_to_map(self, instance):
+        self.manager.current = "map"
+        self.manager.get_screen("map").show_profile()
+    
+    def go_to_ai(self, instance):
+        self.manager.current = "eco_ai"
+        self.manager.get_screen("eco_ai").show_profile()
+
+    def go_to_food(self, instance):
+        self.manager.current = "food"
+        self.manager.get_screen("food").show_profile()
+
+    def go_to_chat(self, instance):
+        self.manager.current = "chat"
+        self.manager.get_screen("chat").show_profile()
+        
+    def go_to_about(self, instance):
+        self.manager.current = "about"
+        self.manager.get_screen("about").show_profile()       
+        
+    def go_to_volunteer(self, instance):
+        self.manager.current = "volunteer"
+        self.manager.get_screen("volunteer").show_profile()
+        
+    def go_to_store(self, instance):
+        self.manager.current = "store"
+        self.manager.get_screen("store").show_profile()
+
+
+
+
+
+# === Экран мессенджера ===
+class ChatScreen(BaseScreen):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # Загружаем все предыдущие сообщения
+        self.messages = load_chat_messages()
+
+        self.chat_box = BoxLayout(orientation='vertical', spacing=10, size_hint=(1, None))
+        self.chat_box.bind(minimum_height=self.chat_box.setter('height'))
+
+        self.scroll = ScrollView(size_hint=(1, 0.75))
+        self.scroll.add_widget(self.chat_box)
+        self.content.add_widget(self.scroll)
+
+        self.input_box = BoxLayout(size_hint=(1, None), height=40, spacing=10)
+        self.msg_input = TextInput(multiline=False, size_hint=(0.8, 1))
+        self.send_btn = Button(text="Отправить", size_hint=(0.2, 1), background_color=(0.2, 0.6, 0.8, 1))
+        self.send_btn.bind(on_press=self.send_message)
+        self.input_box.add_widget(self.msg_input)
+        self.input_box.add_widget(self.send_btn)
+        self.content.add_widget(self.input_box)
+
+        # 🔹 кнопка "Назад"
+        self.back_btn = Button(
+            text="Назад",
+            size_hint=(1, None),
+            height=50,
+            background_color=(0.2, 0.6, 0.2, 1)
+        )
+        self.back_btn.bind(on_press=self.go_back)
+        self.content.add_widget(self.back_btn)
+
+        self.show_profile()
+
+        # Отображаем предыдущие сообщения
+        for msg in self.messages:
+            self.add_message(msg["username"], msg["avatar"], msg["text"])
+
+    def send_message(self, instance):
+        text = self.msg_input.text.strip()
+        if text:
+            self.add_message(UserData.login, UserData.avatar, text)
+
+            # Сохраняем сообщение в список и файл
+            self.messages.append({
+                "username": UserData.login,
+                "avatar": UserData.avatar,
+                "text": text
+            })
+            save_chat_messages(self.messages)
+            self.msg_input.text = ""
+
+    def add_message(self, username, avatar_path, text):
+        msg_layout = BoxLayout(size_hint_y=None, height=50, spacing=10)
+        avatar = Image(source=avatar_path, size_hint=(None, None), size=(40, 40))
+        label = Label(text=f"[b]{username}[/b]: {text}", markup=True, valign="middle")
+        msg_layout.add_widget(avatar)
+        msg_layout.add_widget(label)
+        self.chat_box.add_widget(msg_layout)
+        self.scroll.scroll_to(msg_layout)
+
+    def go_back(self, instance):
+        self.manager.current = "main"
+        self.manager.get_screen("main").show_profile()
+
+
+
+
+# список советов для "Миски добра"
+ECO_TIPS = [
+    "Отдавай лишнюю еду в контейнеры рядом с домом — это поможет нуждающимся и сократит отходы.",
+    "Не выбрасывай старую одежду: её можно сдать в приёмный пункт или отдать в приют.",
+    "Используй многоразовые сумки и контейнеры, чтобы уменьшить количество пластика.",
+    "Делись вещами, которые тебе больше не нужны — они могут стать полезными для других.",
+    "Старайся покупать продукты с минимальной упаковкой, это снижает количество мусора.",
+    "Организуй у себя дома коробку для вещей, которые можно пожертвовать.",
+    "Участвуй в акциях по переработке: батарейки, пластик, макулатура — всё это можно сдать.",
+    "Стань волонтёром проекта 'Миска добра' и помогай собирать пожертвования.",
+    "Расскажи друзьям о проекте — вместе мы можем помочь большему количеству людей.",
+    "Экономь электроэнергию и воду — это тоже вклад в заботу о планете."
+]
+
+
+class EcoAssistantScreen(BaseScreen):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        # очищаем content и рисуем чат
+        self.content.clear_widgets()
+
+        # 🔹 верхняя панель с кнопками
+        top_bar = BoxLayout(size_hint=(1, None), height=50, spacing=10)
+
+        back_btn = Button(
+            text="⬅ Назад",
+            size_hint=(None, 1),
+            width=100,
+            background_color=(0.2, 0.6, 0.8, 1)
+        )
+        back_btn.bind(on_press=self.go_back)
+
+        tip_btn = Button(
+            text="Совет дня 🌱",
+            size_hint=(None, 1),
+            width=150,
+            background_color=(0.2, 0.8, 0.4, 1)
+        )
+        tip_btn.bind(on_press=self.show_random_tip)
+
+        top_bar.add_widget(back_btn)
+        top_bar.add_widget(tip_btn)
+        self.content.add_widget(top_bar)
+
+        # Прокручиваемая область для сообщений
+        self.chat_log = BoxLayout(orientation="vertical", size_hint_y=None, spacing=10)
+        self.chat_log.bind(minimum_height=self.chat_log.setter("height"))
+
+        scroll = ScrollView(size_hint=(1, 0.7))
+        scroll.add_widget(self.chat_log)
+        self.content.add_widget(scroll)
+
+        # Поле ввода + кнопка "Отправить"
+        input_box = BoxLayout(size_hint=(1, 0.15), spacing=5)
+        self.user_input = TextInput(hint_text="Введите вопрос...", multiline=False)
+        send_btn = Button(text="Отправить", size_hint=(None, 1), width=120)
+        send_btn.bind(on_press=self.send_message)
+
+        input_box.add_widget(self.user_input)
+        input_box.add_widget(send_btn)
+        self.content.add_widget(input_box)
+
+    def add_message(self, sender, text):
+        """Добавление сообщения в чат"""
+        msg = Label(
+            text=f"[b]{sender}: [/b]{text}",
+            markup=True,
+            size_hint_y=None,
+            height=40,
+            halign="left",
+            valign="middle"
+        )
+        msg.bind(texture_size=msg.setter("size"))
+        self.chat_log.add_widget(msg)
+
+    def send_message(self, instance):
+        user_text = self.user_input.text.strip()
+        if not user_text:
+            return
+
+        # Добавляем сообщение пользователя
+        self.add_message("Ты", user_text)
+        self.user_input.text = ""
+
+        # Генерация ответа AI
+        reply = ai_bot_reply(user_text)
+        self.add_message("Eco-бот", reply)
+
+    def show_random_tip(self, instance):
+        """Показать случайный совет"""
+        tip = random.choice(ECO_TIPS)
+        self.add_message("Совет", tip)
+
+    def go_back(self, instance):
+        """Возврат на главный экран"""
+        self.manager.current = "main"
+        self.manager.get_screen("main").show_profile()
+
+
+# === Экран с картой ===
+class MapScreen(BaseScreen):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.show_profile()
+
+        self.header = Label(text="Карта контейнеров", font_size=22, bold=True)
+        self.content.add_widget(self.header)
+
+        self.map_view = MapView(zoom=14, lat=53.2835, lon=69.3969)
+        self.content.add_widget(self.map_view)
+        self.add_markers()
+
+        self.content.add_widget(Button(
+            text="Назад",
+            background_color=(0.2, 0.6, 0.2, 1),
+            on_press=self.go_back
+        ))
+
+    def reset_ui(self):
+        self.content.clear_widgets()
+        self.content.add_widget(self.header)
+        self.content.add_widget(self.map_view)
+
+    def add_markers(self):
+        locations = [
+            {"lat": 53.2835, "lon": 69.3969, "icon": "cache/eco_bin_icon.jpg"},
+            {"lat": 53.2821, "lon": 69.3897, "icon": "cache/eco_bin_icon.jpg"},
+            {"lat": 53.2940, "lon": 69.4048, "icon": "cache/eco_bin_icon.jpg"},
+        ]
+        for loc in locations:
+            marker = MapMarker(lat=loc["lat"], lon=loc["lon"], source=loc["icon"])
+            self.map_view.add_widget(marker)
+
+    def go_back(self, instance):
+        self.manager.current = "main"
+        self.manager.get_screen("main").show_profile()
+        
+class AboutScreen(BaseScreen):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.show_profile()
+
+        # Текст посередине
+        self.content.add_widget(Label(
+             text=(
+             "Миска добра — социальный и экологический проект.\n"
+             "Мы сокращаем пищевые отходы и перерабатываем ненужные вещи.\n"
+             "Помогаем нуждающимся и создаём сообщество людей, заботящихся о планете."
+             ),
+    font_size=18,
+    color=(1, 1, 1, 1),
+    halign="center",
+    valign="middle"
+))
+
+
+
+        # Кнопки
+        btns = BoxLayout(size_hint=(1, None), height=50, spacing=10)
+        
+        open_site_btn = Button(text="Данные о нас", background_color=(0.2, 0.6, 0.8, 1))
+        open_site_btn.bind(on_press=self.open_site)
+        
+        back_btn = Button(text="Назад", background_color=(0.2, 0.6, 0.2, 1))
+        back_btn.bind(on_press=self.go_back)
+        
+        btns.add_widget(open_site_btn)
+        btns.add_widget(back_btn)
+        self.content.add_widget(btns)
+
+    def open_site(self, instance):
+        webbrowser.open("https://liberty74.github.io/")
+
+    def go_back(self, instance):
+        self.manager.current = "main"
+        self.manager.get_screen("main").show_profile()       
+        
+        
+        
+class VolunteerScreen(BaseScreen):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.show_profile()
+
+        self.header = Label(text="Волонтерство", font_size=22, bold=True)
+        self.content.add_widget(self.header)
+
+        # Список мероприятий
+        self.activities = [
+            {"name": "Подкормка животных", "date": "2025-09-20", "time": "10:00"},
+            {"name": "Сортировка еды", "date": "2025-09-21", "time": "12:00"},
+            {"name": "Сбор еды у магазинов", "date": "2025-09-22", "time": "09:00"},
+            {"name": "Доставка еды в приют", "date": "2025-09-23", "time": "14:00"},
+        ]
+
+        # Контейнер для кнопок
+        self.activities_box = BoxLayout(orientation='vertical', spacing=10, size_hint=(1, None))
+        self.activities_box.bind(minimum_height=self.activities_box.setter('height'))
+
+        for act in self.activities:
+            btn = Button(
+                text=f"{act['name']} ({act['date']} {act['time']})",
+                size_hint=(1, None),
+                height=50,
+                background_color=(0.2, 0.6, 0.8, 1)
+            )
+            btn.bind(on_press=lambda x, a=act: self.join_activity(a))
+            self.activities_box.add_widget(btn)
+
+        self.scroll = ScrollView(size_hint=(1, 0.75))
+        self.scroll.add_widget(self.activities_box)
+        self.content.add_widget(self.scroll)
+
+        # Кнопка "Назад"
+        self.back_btn = Button(
+            text="Назад",
+            size_hint=(1, None),
+            height=50,
+            background_color=(0.2, 0.6, 0.2, 1)
+        )
+        self.back_btn.bind(on_press=self.go_back)
+        self.content.add_widget(self.back_btn)
+
+    def join_activity(self, activity):
+        points_earned = 10
+        UserData.points += points_earned
+
+        data = load_user_data()
+        if UserData.login not in data:
+            data[UserData.login] = {"points": 0, "total_points": 0}
+
+        # Увеличиваем текущие баллы и суммарные
+        data[UserData.login]["points"] = UserData.points
+        data[UserData.login]["total_points"] = data[UserData.login].get("total_points", 0) + points_earned
+
+        save_user_data(data)
+        self.update_profile()
+
+        self.result_label = Label(
+            text=f"Вы записались на: {activity['name']}!\nБаллы +{points_earned} (итого: {UserData.points})",
+            font_size=16,
+            color=(1, 1, 1, 1)
+        )
+        self.content.add_widget(self.result_label)
+
+    def go_back(self, instance):
+        self.manager.current = "main"
+        self.manager.get_screen("main").show_profile()
+
+
+
+# === Экран проверки еды ===
+class FoodScreen(BaseScreen):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.show_profile()
+
+        self.header = Label(text="Проверка еды", font_size=22, bold=True)
+        self.content.add_widget(self.header)
+
+        self.upload_btn = Button(
+            text="Загрузить фото",
+            background_color=(0.2, 0.6, 0.8, 1),
+            font_size=18,
+            size_hint=(1, None),
+            height=50
+        )
+        self.upload_btn.bind(on_press=self.open_filechooser)
+        self.content.add_widget(self.upload_btn)
+
+        self.food_img = Image(size_hint=(1, 0.6))
+        self.content.add_widget(self.food_img)
+
+        self.result_label = Label(text="Здесь появится результат", font_size=18, color=(1, 1, 1, 1))
+        self.content.add_widget(self.result_label)
+
+        self.back_btn = Button(
+            text="Назад",
+            background_color=(0.2, 0.6, 0.2, 1),
+            on_press=self.go_back
+        )
+        self.content.add_widget(self.back_btn)
+
+    def reset_ui(self):
+        self.content.clear_widgets()
+        self.content.add_widget(self.header)
+        self.content.add_widget(self.upload_btn)
+        self.content.add_widget(self.food_img)
+        self.content.add_widget(self.result_label)
+        self.content.add_widget(self.back_btn)
+
+    def open_filechooser(self, instance):
+        self.content.clear_widgets()
+        self.content.add_widget(Label(text="Выберите фото", font_size=20, bold=True))
+
+        desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+        downloads = os.path.join(os.path.expanduser("~"), "Downloads")
+
+        self.filechooser = FileChooserIconView(path=".", filters=["*.png", "*.jpg", "*.jpeg"], size_hint=(1, 0.8))
+        if os.path.exists(desktop):
+            self.filechooser.path = desktop
+        elif os.path.exists(downloads):
+            self.filechooser.path = downloads
+
+        self.filechooser.bind(on_submit=self.selected_file)
+        self.content.add_widget(self.filechooser)
+
+        controls = BoxLayout(size_hint=(1, None), height=50, spacing=10)
+        open_btn = Button(text="Открыть", background_color=(0.2, 0.6, 0.8, 1))
+        open_btn.bind(on_press=lambda x: self.selected_file(None, self.filechooser.selection, None))
+        cancel_btn = Button(text="Отмена", background_color=(0.6, 0.2, 0.2, 1))
+        cancel_btn.bind(on_press=lambda x: self.reset_ui())
+        controls.add_widget(open_btn)
+        controls.add_widget(cancel_btn)
+        self.content.add_widget(controls)
+
+    def selected_file(self, filechooser, selection, touch):
+        if selection:
+            file_path = selection[0]
+            self.food_img.source = file_path
+            self.analyze_image(file_path)
+            self.reset_ui()
+
+    def analyze_image(self, file_path):
+        image = preprocess(PILImage.open(file_path)).unsqueeze(0).to(device)
+        text_descriptions = ["not food", "fresh food", "edible food", "tasty food", "rotten food", "food with mold"]
+        text_tokens = clip.tokenize(text_descriptions).to(device)
+
+        with torch.no_grad():
+            image_features = model.encode_image(image)
+            text_features = model.encode_text(text_tokens)
+            image_features /= image_features.norm(dim=-1, keepdim=True)
+            text_features /= text_features.norm(dim=-1, keepdim=True)
+            similarity = (image_features @ text_features.T).squeeze(0)
+
+        best_idx = similarity.argmax().item()
+        best_label = text_descriptions[best_idx]
+
+        if "fresh" in best_label or "edible" in best_label or "tasty" in best_label:
+            result_text = "Эту еду можно есть!"
+        elif "rotten" in best_label or "mold" in best_label:
+            result_text = "Эту еду есть нельзя!"
+        else:
+            result_text = "Это не еда!"
+
+        self.result_label.text = f"CLIP считает: {best_label}\n\n{result_text}"
+
+    def go_back(self, instance):
+        self.manager.current = "main"
+        self.manager.get_screen("main").show_profile()
+        
+# === Экран магазина с красивым каталогом ===
+class StoreScreen(BaseScreen):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.show_profile()
+
+        # Заголовок
+        self.header = Label(
+            text="Магазин",
+            font_size=28,
+            bold=True,
+            color=(1, 1, 1, 1),
+            size_hint=(1, None),
+            height=50
+        )
+        self.content.add_widget(self.header)
+
+        # ScrollView для каталога
+        self.scroll = ScrollView(size_hint=(1, 0.75))
+        self.catalog_box = BoxLayout(
+            orientation='vertical',
+            spacing=15,
+            padding=10,
+            size_hint_y=None
+        )
+        self.catalog_box.bind(minimum_height=self.catalog_box.setter('height'))
+        self.scroll.add_widget(self.catalog_box)
+        self.content.add_widget(self.scroll)
+
+        # Сообщение о покупке
+        self.message_label = Label(
+            text="",
+            font_size=16,
+            color=(1, 1, 1, 1),
+            size_hint=(1, None),
+            height=30
+        )
+        self.content.add_widget(self.message_label)
+
+        # Кнопка "Назад"
+        self.back_btn = Button(
+            text="Назад",
+            size_hint=(1, None),
+            height=50,
+            background_color=(0.2, 0.6, 0.2, 1)
+        )
+        self.back_btn.bind(on_press=self.go_back)
+        self.content.add_widget(self.back_btn)
+
+        # === Сначала создаём список товаров ===
+        self.items = [
+            {"name": "Уважение", "cost": 100, "description": "Проявите уважение к сообществу, потратив баллы."},
+        ]
+
+        # Загружаем товары
+        self.load_items()
+
+    def load_items(self):
+        self.catalog_box.clear_widgets()
+        for item in self.items:
+            # Обёртка для товара
+            item_layout = BoxLayout(
+                orientation='vertical',
+                size_hint=(1, None),
+                height=120,
+                padding=10,
+                spacing=5
+            )
+
+            # Название и стоимость
+            title = Label(
+                text=f"{item['name']} - {item['cost']} баллов",
+                font_size=20,
+                bold=True,
+                color=(1, 1, 1, 1)
+            )
+            desc = Label(
+                text=item['description'],
+                font_size=16,
+                color=(0.9, 0.9, 0.9, 1),
+                halign="left",
+                valign="middle"
+            )
+            desc.bind(size=desc.setter('text_size'))
+
+            # Кнопка "Купить"
+            buy_btn = Button(
+                text="Купить",
+                size_hint=(1, None),
+                height=40,
+                background_color=(0.2, 0.6, 0.8, 1)
+            )
+            buy_btn.bind(on_press=lambda x, i=item: self.buy_item(i))
+
+            # Добавляем виджеты в layout
+            item_layout.add_widget(title)
+            item_layout.add_widget(desc)
+            item_layout.add_widget(buy_btn)
+
+            # Добавляем товар в каталог
+            self.catalog_box.add_widget(item_layout)
+
+    def buy_item(self, item):
+        if UserData.points >= item['cost']:
+            UserData.points -= item['cost']
+            self.update_profile()
+            self.message_label.text = f"Вы купили {item['name']}! Остаток баллов: {UserData.points}"
+            
+            # Сохраняем новые баллы
+            data = load_user_data()
+            if UserData.login not in data:
+                data[UserData.login] = {}
+            data[UserData.login]["points"] = UserData.points
+            save_user_data(data)
+        else:
+            self.message_label.text = "Недостаточно баллов для покупки!"
+
+    def go_back(self, instance):
+        self.manager.current = "main"
+        self.manager.get_screen("main").show_profile()
+
+        
+        
+
+
+# === Запуск приложения ===
+class EcoCityApp(App):
+    def build(self):
+        sm = ScreenManager(transition=FadeTransition())
+        sm.add_widget(AuthScreen(name="auth"))
+        sm.add_widget(MainScreen(name="main"))
+        sm.add_widget(MapScreen(name="map"))
+        sm.add_widget(FoodScreen(name="food"))
+        sm.add_widget(ChatScreen(name="chat"))  # добавляем мессенджер
+        sm.add_widget(AboutScreen(name="about"))
+        sm.add_widget(VolunteerScreen(name="volunteer"))
+        sm.add_widget(StoreScreen(name="store"))
+        sm.add_widget(EcoAssistantScreen(name="eco_ai"))
+        sm.current = "auth"
+        return sm
+
+
+if __name__ == "__main__":
+    EcoCityApp().run()

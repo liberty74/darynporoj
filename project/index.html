@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link href="./normalize.css" rel="stylesheet" />
+    <link href="./style.css" rel="stylesheet" />
+    <title>Document</title>
+  </head>
+  <body>
+    <header class="header">
+      <img src="me1.jpg" alt="avatar" class="header__avatar" />
+      <h1 class="header__title">Кузаиров Арман</h1>
+      <h3 class="header__subtitle">Разработчик "Миски добра"</h3>
+    </header>
+    <main>
+     <section class="links">
+  <h2 class="links__header">Мои контакты</h2>
+  <ul class="links__container">
+    <li class="links__link">
+      <p class="links__title">Номер телефона</p>
+      <a class="linsk__link" href="https://wa.me/+77082529410">+77082529410</a>
+    </li>
+    <li class="links__link">
+      <p class="links__title">Email</p>
+      <a class="linsk__link" href="mailto:armankuzairov1@gmail.com">armankuzairov1@gmail.com</a>
+    </li>
+    <li class="links__link">
+      <p class="links__title">Telegram</p>
+      <a class="linsk__link" href="https://t.me/hkgnzeri">@hkgnzeri</a>
+    </li>
+    <li class="links__link">
+      <p class="links__title">Instagram</p>
+      <a class="linsk__link" href="https://www.instagram.com/k_arman0?igsh=MWhkYnZvNXpsMXdndg==">instagram.com/k_arman0</a>
+    </li>
+  </ul>
+
+  <!-- Иконки под контактами -->
+  <div style="display:flex; gap:10px; margin-top:15px; align-items:center; justify-content:flex-start; flex-wrap:wrap;">
+    <!-- Email -->
+    <a href="mailto:armankuzairov1@gmail.com" aria-label="Email">
+      <svg width="28" height="28" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" style="fill: rgb(243, 124, 5); padding: 8px; filter: drop-shadow(rgba(0,0,0,0.25) 0px 0.5px 1px);">
+        <path d="M166.667 33.3333H33.3334C24.1251 33.3333 16.7501 40.7916 16.7501 49.9999L16.6667 150C16.6667 159.208 24.1251 166.667 33.3334 166.667H166.667C175.875 166.667 183.333 159.208 183.333 150V49.9999C183.333 40.7916 175.875 33.3333 166.667 33.3333ZM166.667 150H33.3334V66.6666L100 108.333L166.667 66.6666V150ZM100 91.6666L33.3334 49.9999H166.667L100 91.6666Z"></path>
+      </svg>
+    </a>
+
+    <!-- Telegram -->
+    <a href="https://t.me/hkgnzeri" aria-label="Telegram">
+      <svg width="28" height="28" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" style="fill: rgb(6, 197, 244); padding: 8px; filter: drop-shadow(rgba(0,0,0,0.25) 0px 0.5px 1px);">
+        <path d="M28.2307 89.8987C79.5175 66.8612 145.887 38.7737 155.048 34.8862C179.08 24.7112 186.454 26.6612 182.777 49.1945C180.137 65.3903 172.518 119.011 166.446 152.386C162.842 172.178 154.758 174.524 142.047 165.961C135.934 161.84 105.079 141.007 98.3828 136.115C92.2699 131.657 83.839 126.295 94.4123 115.732C98.1747 111.97 122.839 87.9237 142.055 69.207C144.573 66.7487 141.41 62.7112 138.505 64.682C112.604 82.2195 76.6936 106.561 72.1232 109.732C65.2186 114.52 58.5874 116.715 46.6838 113.224C37.6898 110.586 28.904 107.44 25.4843 106.24C12.3157 101.624 15.4416 95.6445 28.2307 89.8987Z"></path>
+      </svg>
+    </a>
+
+    <!-- WhatsApp -->
+    <a href="https://wa.me/+77082529410" aria-label="WhatsApp">
+      <svg width="28" height="28" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet" style="fill: rgb(37, 211, 102); padding: 8px; filter: drop-shadow(rgba(0,0,0,0.25) 0px 0.5px 1px);">
+        <path d="M16 0C7.163 0 0 7.163 0 16c0 2.828.744 5.465 2.033 7.746L0 32l8.357-2.033C10.535 31.256 13.172 32 16 32c8.837 0 16-7.163 16-16S24.837 0 16 0zm7.427 17.053c-.116-.194-.423-.313-.888-.548-.466-.234-2.75-1.355-3.177-1.511-.427-.155-.738-.233-1.049.233-.31.466-1.204 1.511-1.473 1.823-.27.311-.542.349-1.008.116-.466-.233-1.966-.725-3.741-2.308-1.384-1.165-2.317-2.604-2.59-3.071-.27-.466-.029-.718.206-.951.213-.213.466-.542.699-.813.233-.27.311-.466.466-.777.155-.311.078-.583-.039-.816-.116-.233-1.049-2.527-1.435-3.463-.378-.91-.764-.786-1.049-.8-.27-.014-.583-.016-.895-.016s-.816.116-1.245.583c-.427.466-1.635 1.599-1.635 3.894s1.676 4.518 1.909 4.833c.233.311 3.299 5.035 7.995 6.872.464.2.825.319 1.107.513.466.311.797.27 1.09.163.334-.116 2.75-1.006 3.138-1.985.39-.979.39-1.82.272-1.985z"/>
+      </svg>
+    </a>
+
+    <!-- Instagram с кругом -->
+    <a href="https://www.instagram.com/k_arman0?igsh=MWhkYnZvNXpsMXdndg==" aria-label="Instagram">
+      <svg width="36" height="36" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="16" cy="16" r="16" fill="#ff2688"/>
+        <path d="M16 9a7 7 0 1 0 0 14 7 7 0 0 0 0-14zm0 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm5.5-10a1.5 1.5 0 1 1-3e-3-3 1.5 1.5 0 0 1 3 .003z" fill="#fff"/>
+      </svg>
+    </a>
+
+  </div>
+</section>
+
+
+
+        </ul>
+      </section>
+      <section class="links">
+  <h2 class="links__header">О проекте</h2>
+  <p class="links__description">
+    <strong>Миска добра</strong> — это социальный и экологический проект, направленный на сокращение пищевых отходов, переработку ненужной одежды и других вещей, а также их передачу нуждающимся и в приюты. 
+    Цель проекта — создавать сообщество людей, которые заботятся о планете и поддерживают тех, кто нуждается в помощи.
+  </p>
+  <p class="links__description">
+    Через удобное приложение пользователи могут:
+  </p>
+  <ul class="links__container">
+    <li>Делать добро простыми действиями — отдавать лишнюю еду, одежду и вещи.</li>
+    <li>Узнавать, где находятся контейнеры и пункты приёма.</li>
+    <li>Контролировать переработку и передачу пожертвований.</li>
+  </ul>
+  <p class="links__description">
+    Проект объединяет экологию, социальную ответственность и добрые дела, делая заботу о планете и окружающих доступной каждому.
+  </p>
+</section>
+
+      <section class="links">
+  <h2 class="links__header">Будущие цели проекта</h2>
+  <ul class="links__container">
+    <li class="links__link">
+      <p class="links__title">Расширение географии</p>
+      <p class="links__description">
+        Открытие новых пунктов приёма еды, одежды и вещей в других городах Казахстана и странах СНГ.
+      </p>
+    </li>
+    <li class="links__link">
+      <p class="links__title">Развитие мобильного приложения</p>
+      <p class="links__description">
+        Внедрение новых функций для удобного отслеживания пожертвований и взаимодействия с волонтёрами.
+      </p>
+    </li>
+    <li class="links__link">
+      <p class="links__title">Образовательные программы</p>
+      <p class="links__description">
+        Проведение мастер-классов и лекций о социальной ответственности, экологической осознанности и волонтёрстве.
+      </p>
+    </li>
+    <li class="links__link">
+      <p class="links__title">Сотрудничество с бизнесом</p>
+      <p class="links__description">
+        Привлечение компаний к участию в проектах по переработке отходов и поддержке нуждающихся.
+      </p>
+    </li>
+    <li class="links__link">
+      <p class="links__title">Сообщество и волонтёры</p>
+      <p class="links__description">
+        Формирование активного сообщества волонтёров, объединяющих людей, которые хотят делать добро простыми действиями.
+      </p>
+    </li>
+  </ul>
+</section>
+
+    </main>
+     <section class="video-section">
+  <h2 class="links__header">Смотрите видео о нашем проекте</h2>
+  <video width="640" height="360" controls>
+    <source src="miska-dobra.mp4" type="video/mp4">
+    Ваш браузер не поддерживает видео.
+  </video>
+</section>
+     <section class="video-section">
+  <h2 class="links__header">Новое видео проекта</h2>
+  <video width="640" height="360" controls>
+    <source src="miska-dobra-2.mp4" type="video/mp4">
+    Ваш браузер не поддерживает видео.
+  </video>
+</section>
+
+
+    <footer>
+      <button type = "button" class="button-link" href=""> Спасибо за просмотр </button>
+    </footer>
+    <script type="text/javascript" src="js.js"></script>
+  </body>
+</html>
